@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model ukpd {
+  id_ukpd    BigInt   @id @default(autoincrement())
+  nama_ukpd  String   @db.VarChar(200)
+  password   String?  @db.VarChar(255)
+  jenis_ukpd String?  @db.VarChar(100)
+  role       String?  @db.VarChar(50)
+  wilayah    String?  @db.VarChar(100)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+
+  @@unique([nama_ukpd])
+  @@map("ukpd")
+}
+
+model pegawai_master {
+  id_pegawai          BigInt   @id @default(autoincrement())
+  nama_ukpd           String?  @db.VarChar(200)
+  nama                String   @db.VarChar(200)
+  nip                 String?  @db.VarChar(30)
+  nrk                 String?  @db.VarChar(30)
+  kondisi             String?  @db.VarChar(100)
+  nama_jabatan_orb    String?  @db.VarChar(200)
+  nama_jabatan_menpan String?  @db.VarChar(200)
+  status_rumpun       String?  @db.VarChar(100)
+  jenis_pegawai       String?  @db.VarChar(100)
+  tanggal_lahir       DateTime? @db.Date
+
+  alamat   alamat[]
+  pasangan pasangan?
+  anak     anak[]
+
+  @@index([nama_ukpd])
+  @@map("pegawai_master")
+}
+
+model alamat {
+  id             BigInt   @id @default(autoincrement())
+  id_pegawai     BigInt
+  tipe           TipeAlamat
+  jalan          String?  @db.VarChar(255)
+  kelurahan      String?  @db.VarChar(100)
+  kecamatan      String?  @db.VarChar(100)
+  kota_kabupaten String?  @db.VarChar(120)
+  provinsi       String?  @db.VarChar(120)
+  kode_provinsi  String?  @db.VarChar(10)
+  kode_kota_kab  String?  @db.VarChar(10)
+  kode_kecamatan String?  @db.VarChar(10)
+  kode_kelurahan String?  @db.VarChar(10)
+  created_at     DateTime? @default(now()) @db.Timestamp(0)
+
+  pegawai pegawai_master @relation(fields: [id_pegawai], references: [id_pegawai])
+
+  @@unique([id_pegawai, tipe], map: "uq_alamat")
+  @@index([id_pegawai])
+  @@map("alamat")
+}
+
+model pasangan {
+  id          BigInt @id @default(autoincrement())
+  id_pegawai  BigInt @unique(map: "uq_pasangan")
+  status_punya StatusPunya?
+  nama        String? @db.VarChar(200)
+  no_tlp      String? @db.VarChar(30)
+  email       String? @db.VarChar(150)
+  pekerjaan   String? @db.VarChar(150)
+  created_at  DateTime? @default(now()) @db.Timestamp(0)
+
+  pegawai pegawai_master @relation(fields: [id_pegawai], references: [id_pegawai])
+
+  @@map("pasangan")
+}
+
+model anak {
+  id            BigInt @id @default(autoincrement())
+  id_pegawai    BigInt
+  urutan        Int
+  nama          String? @db.VarChar(200)
+  jenis_kelamin JenisKelamin?
+  tempat_lahir  String? @db.VarChar(100)
+  tanggal_lahir DateTime? @db.Date
+  pekerjaan     String? @db.VarChar(150)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+
+  pegawai pegawai_master @relation(fields: [id_pegawai], references: [id_pegawai])
+
+  @@unique([id_pegawai, urutan], map: "uq_anak")
+  @@index([id_pegawai])
+  @@map("anak")
+}
+
+enum JenisKelamin {
+  L
+  P
+}
+
+enum TipeAlamat {
+  DOMISILI
+  KTP
+}
+
+enum StatusPunya {
+  YA
+  TIDAK
+}
