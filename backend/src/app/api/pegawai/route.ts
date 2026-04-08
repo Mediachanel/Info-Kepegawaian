@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonSafe } from "@/lib/json";
+import { fetchLegacyPegawaiList } from "./_legacy";
 
 const MASTER_COLUMNS = [
   "nama_ukpd",
@@ -93,115 +94,43 @@ export async function GET(request: NextRequest) {
       : [];
     const search = searchRaw ? searchRaw.trim() : "";
 
-    const andFilters: any[] = [];
-    if (unit) {
-      andFilters.push({ nama_ukpd: unit });
-    }
-    if (!unit && wilayah) {
-      const ukpdRows = await prisma.ukpd.findMany({
-        where: { wilayah },
-        select: { nama_ukpd: true },
-      });
-      const ukpdNames = ukpdRows.map((row) => row.nama_ukpd).filter(Boolean);
-      if (ukpdNames.length === 0) {
-        return NextResponse.json(jsonSafe({ rows: [], limit: take, offset: skip, total: 0 }));
-      }
-      andFilters.push({ nama_ukpd: { in: ukpdNames } });
-    }
-    if (jabatan) {
-      andFilters.push({ nama_jabatan_orb: { contains: jabatan } });
-    }
-    if (statusList.length === 1) {
-      andFilters.push({ jenis_pegawai: statusList[0] });
-    } else if (statusList.length > 1) {
-      andFilters.push({ jenis_pegawai: { in: statusList } });
-    }
-    if (search) {
-      andFilters.push({
-        OR: [
-          { nama: { contains: search } },
-          { nip: { contains: search } },
-        ],
-      });
-    }
-    const whereClause = andFilters.length > 0 ? { AND: andFilters } : undefined;
-
-    if (full) {
-      const clauseParts: string[] = [];
-      const params: any[] = [];
-      if (unit) {
-        clauseParts.push("nama_ukpd = ?");
-        params.push(unit);
-      } else if (wilayah) {
-        const ukpdRows = await prisma.ukpd.findMany({
-          where: { wilayah },
-          select: { nama_ukpd: true },
-        });
-        const ukpdNames = ukpdRows.map((row) => row.nama_ukpd).filter(Boolean);
-        if (ukpdNames.length === 0) {
-          return NextResponse.json(jsonSafe({ rows: [], limit: take, offset: skip, total: 0 }));
-        }
-        clauseParts.push(`nama_ukpd IN (${ukpdNames.map(() => "?").join(",")})`);
-        params.push(...ukpdNames);
-      }
-      if (jabatan) {
-        clauseParts.push("nama_jabatan_orb LIKE ?");
-        params.push(`%${jabatan}%`);
-      }
-      if (statusList.length === 1) {
-        clauseParts.push("jenis_pegawai = ?");
-        params.push(statusList[0]);
-      } else if (statusList.length > 1) {
-        clauseParts.push(`jenis_pegawai IN (${statusList.map(() => "?").join(",")})`);
-        params.push(...statusList);
-      }
-      if (search) {
-        clauseParts.push("(nama LIKE ? OR nip LIKE ?)");
-        params.push(`%${search}%`, `%${search}%`);
-      }
-      const whereSql = clauseParts.length ? `WHERE ${clauseParts.join(" AND ")}` : "";
-      const totalRows = await prisma.$queryRawUnsafe<{ total: bigint }[]>(
-        `SELECT COUNT(*) AS total FROM pegawai_master ${whereSql}`,
-        ...params
-      );
-      const total = Number(totalRows?.[0]?.total || 0);
-      const rows = await prisma.$queryRawUnsafe(
-        `SELECT * FROM pegawai_master ${whereSql} ORDER BY id_pegawai ASC LIMIT ? OFFSET ?`,
-        ...params,
-        take,
-        skip
-      );
-      return NextResponse.json(jsonSafe({ rows, limit: take, offset: skip, total }));
-    }
-
-    const total = await prisma.pegawai_master.count({
-      where: whereClause,
+    const result = await fetchLegacyPegawaiList({
+      limit: take,
+      offset: skip,
+      unit,
+      wilayah,
+      jabatan,
+      statusList,
+      search,
     });
 
-    const pegawai = await prisma.pegawai_master.findMany({
-      take,
-      skip,
-      orderBy: { id_pegawai: "asc" },
-      where: whereClause,
-      ...(lite
-        ? {
-            select: {
-              id_pegawai: true,
-              nama_ukpd: true,
-              nama: true,
-              nip: true,
-              nrk: true,
-              kondisi: true,
-              nama_jabatan_orb: true,
-              nama_jabatan_menpan: true,
-              status_rumpun: true,
-              jenis_pegawai: true,
-            },
-          }
-        : {}),
-    });
+    const rows = lite
+      ? result.rows.map((row) => ({
+          id_pegawai: row.id_pegawai,
+          nama_ukpd: row.nama_ukpd,
+          nama: row.nama,
+          nip: row.nip,
+          nrk: row.nrk,
+          nik: row.nik,
+          kondisi: row.kondisi,
+          nama_jabatan_orb: row.nama_jabatan_orb,
+          nama_jabatan_menpan: row.nama_jabatan_menpan,
+          status_rumpun: row.status_rumpun,
+          jenis_pegawai: row.jenis_pegawai,
+          wilayah: row.wilayah,
+          wilayah_ukpd: row.wilayah_ukpd,
+        }))
+      : result.rows;
 
-    return NextResponse.json(jsonSafe({ rows: pegawai, limit: take, offset: skip, total }));
+    return NextResponse.json(
+      jsonSafe({
+        rows,
+        limit: take,
+        offset: skip,
+        total: result.total,
+        full,
+      })
+    );
   } catch (error) {
     console.error('Error fetching pegawai:', error);
     return NextResponse.json(

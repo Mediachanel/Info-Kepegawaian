@@ -1,40 +1,65 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonSafe } from "@/lib/json";
+import { fetchLegacyPegawaiList } from "../pegawai/_legacy";
 
-type ColumnMap = Record<string, string[]>;
+const normalizeText = (value: unknown) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 
-const COLUMN_CANDIDATES: ColumnMap = {
-  status: ["jenis_pegawai", "nama_jenis_pegawai", "status_pegawai", "nama_status_aktif", "kondisi"],
-  rumpun: ["status_rumpun", "nama_status_rumpun", "rumpun", "nama_rumpun"],
-  pendidikan: ["jenjang_pendidikan", "pendidikan", "nama_pendidikan"],
-  gender: ["jenis_kelamin", "gender"],
-  marital: ["status_pernikahan", "status_perkawinan", "status_nikah"],
-};
+const normalizeUpper = (value: unknown) => normalizeText(value).toUpperCase();
 
-const resolveColumn = (columns: Set<string>, candidates?: string[]) => {
-  if (!candidates) return undefined;
-  return candidates.find((name) => columns.has(name));
-};
-
-const buildStatusExpr = (columns: Set<string>) => {
-  const hasJenis = columns.has("jenis_pegawai");
-  const hasKondisi = columns.has("kondisi");
-  if (hasJenis && hasKondisi) {
-    return "CASE WHEN p.jenis_pegawai IS NULL OR p.jenis_pegawai = '' THEN p.kondisi ELSE p.jenis_pegawai END";
+const inferStatus = (row: Record<string, any>) => {
+  const text = normalizeUpper(
+    row.status_pegawai || row.jenis_pegawai || row.nama_status_aktif || row.status_rumpun
+  );
+  if (text === "PNS") return "PNS";
+  if (text === "CPNS") return "CPNS";
+  if (text.includes("PPPK") || text.includes("P3K")) return "PPPK";
+  if (text.includes("NON ASN") || text.includes("NON PNS") || text.includes("PROFESIONAL")) {
+    return "NON PNS";
   }
-  if (hasJenis) return "p.jenis_pegawai";
-  if (hasKondisi) return "p.kondisi";
-  return undefined;
+  if (text.includes("PJLP")) return "PJLP";
+  return normalizeText(row.status_pegawai || row.jenis_pegawai || row.nama_status_aktif || row.status_rumpun);
 };
 
-const buildWhere = (unit: string, ukpdNames: string[]) => {
-  if (unit) return { clause: "WHERE p.nama_ukpd = ?", params: [unit] };
-  if (ukpdNames.length) {
-    const placeholders = ukpdNames.map(() => "?").join(",");
-    return { clause: `WHERE p.nama_ukpd IN (${placeholders})`, params: ukpdNames };
+const countBy = (rows: Record<string, any>[], keyFn: (row: Record<string, any>) => string) => {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const key = normalizeText(keyFn(row));
+    if (!key) continue;
+    map.set(key, (map.get(key) || 0) + 1);
   }
-  return { clause: "", params: [] as string[] };
+  return map;
+};
+
+const pushCounterRows = (
+  target: Array<Record<string, any>>,
+  labelKey: "unit" | "rumpun" | "pendidikan",
+  valueKey: "status" | "gender" | "marital",
+  rows: Record<string, any>[],
+  labelFn: (row: Record<string, any>) => string,
+  valueFn: (row: Record<string, any>) => string
+) => {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const label = normalizeText(labelFn(row));
+    const value = normalizeText(valueFn(row));
+    const wilayah = normalizeText(row.wilayah || row.wilayah_ukpd);
+    if (!label || !value) continue;
+    const composite = `${label}|||${value}|||${wilayah}`;
+    map.set(composite, (map.get(composite) || 0) + 1);
+  }
+
+  map.forEach((count, composite) => {
+    const [label, value, wilayah] = composite.split("|||");
+    target.push({
+      [labelKey]: label,
+      [valueKey]: value,
+      wilayah,
+      count,
+    });
+  });
 };
 
 export async function GET(request: NextRequest) {
@@ -42,165 +67,63 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const unit = (searchParams.get("unit") || "").trim();
     const wilayah = (searchParams.get("wilayah") || "").trim();
-
-    const columnRows = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
-      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pegawai_master'"
-    );
-    const columns = new Set(columnRows.map((row) => row.COLUMN_NAME));
-    const statusCol = resolveColumn(columns, COLUMN_CANDIDATES.status);
-    const statusExpr = buildStatusExpr(columns);
-    const rumpunCol = resolveColumn(columns, COLUMN_CANDIDATES.rumpun);
-    const pendidikanCol = resolveColumn(columns, COLUMN_CANDIDATES.pendidikan);
-    const genderCol = resolveColumn(columns, COLUMN_CANDIDATES.gender);
-    const maritalCol = resolveColumn(columns, COLUMN_CANDIDATES.marital);
-
-    let ukpdNames: string[] = [];
-    if (!unit && wilayah) {
-      const ukpdRows = await prisma.ukpd.findMany({
-        where: { wilayah },
-        select: { nama_ukpd: true },
-      });
-      ukpdNames = ukpdRows.map((row) => row.nama_ukpd).filter(Boolean);
-    }
-
-    const wherePrisma =
-      unit || ukpdNames.length
-        ? {
-            nama_ukpd: unit ? unit : { in: ukpdNames },
-          }
-        : undefined;
-
-    const total = await prisma.pegawai_master.count({
-      where: wherePrisma,
+    const pegawai = (
+      await fetchLegacyPegawaiList({
+        limit: 50000,
+        offset: 0,
+        unit,
+        wilayah,
+      })
+    ).rows.filter((row) => {
+      const kondisi = normalizeUpper(row.kondisi);
+      return kondisi === "AKTIF" || kondisi === "TUGAS BELAJAR";
     });
 
-    const { clause, params } = buildWhere(unit, ukpdNames);
+    const total = pegawai.length;
+    const statusCounts = Array.from(countBy(pegawai, (row) => inferStatus(row)).entries()).map(([status, count]) => ({ status, count }));
+    const genderCounts = Array.from(countBy(pegawai, (row) => row.jenis_kelamin).entries()).map(([gender, count]) => ({ gender, count }));
+    const maritalCounts = Array.from(countBy(pegawai, (row) => row.status_perkawinan).entries()).map(([marital, count]) => ({ marital, count }));
 
-    const statusCounts =
-      statusExpr
-        ? await prisma.$queryRawUnsafe(
-            `SELECT ${statusExpr} AS status, COUNT(*) AS count FROM pegawai_master p ${clause} GROUP BY ${statusExpr}`,
-            ...params
-          )
-        : [];
+    const unitStatus: Array<Record<string, any>> = [];
+    const unitGender: Array<Record<string, any>> = [];
+    const unitMarital: Array<Record<string, any>> = [];
+    const rumpunStatus: Array<Record<string, any>> = [];
+    const rumpunGender: Array<Record<string, any>> = [];
+    const rumpunMarital: Array<Record<string, any>> = [];
+    const pendidikanStatus: Array<Record<string, any>> = [];
+    const pendidikanGender: Array<Record<string, any>> = [];
+    const pendidikanMarital: Array<Record<string, any>> = [];
 
-    const unitStatus =
-      statusExpr
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.nama_ukpd AS unit, u.wilayah AS wilayah, ${statusExpr} AS status, COUNT(*) AS count
-             FROM pegawai_master p
-             LEFT JOIN ukpd u ON u.nama_ukpd = p.nama_ukpd
-             ${clause}
-             GROUP BY p.nama_ukpd, u.wilayah, ${statusExpr}`,
-            ...params
-          )
-        : [];
-
-    const rumpunStatus =
-      statusExpr && rumpunCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${rumpunCol} AS rumpun, ${statusExpr} AS status, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${rumpunCol}, ${statusExpr}`,
-            ...params
-          )
-        : [];
-
-    const pendidikanStatus =
-      statusExpr && pendidikanCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${pendidikanCol} AS pendidikan, ${statusExpr} AS status, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${pendidikanCol}, ${statusExpr}`,
-            ...params
-          )
-        : [];
-
-    const genderCounts =
-      genderCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${genderCol} AS gender, COUNT(*) AS count FROM pegawai_master p ${clause} GROUP BY p.${genderCol}`,
-            ...params
-          )
-        : [];
-
-    const maritalCounts =
-      maritalCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${maritalCol} AS marital, COUNT(*) AS count FROM pegawai_master p ${clause} GROUP BY p.${maritalCol}`,
-            ...params
-          )
-        : [];
-
-    const unitGender =
-      genderCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.nama_ukpd AS unit, u.wilayah AS wilayah, p.${genderCol} AS gender, COUNT(*) AS count
-             FROM pegawai_master p
-             LEFT JOIN ukpd u ON u.nama_ukpd = p.nama_ukpd
-             ${clause}
-             GROUP BY p.nama_ukpd, u.wilayah, p.${genderCol}`,
-            ...params
-          )
-        : [];
-
-    const unitMarital =
-      maritalCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.nama_ukpd AS unit, u.wilayah AS wilayah, p.${maritalCol} AS marital, COUNT(*) AS count
-             FROM pegawai_master p
-             LEFT JOIN ukpd u ON u.nama_ukpd = p.nama_ukpd
-             ${clause}
-             GROUP BY p.nama_ukpd, u.wilayah, p.${maritalCol}`,
-            ...params
-          )
-        : [];
-
-    const rumpunGender =
-      genderCol && rumpunCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${rumpunCol} AS rumpun, p.${genderCol} AS gender, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${rumpunCol}, p.${genderCol}`,
-            ...params
-          )
-        : [];
-
-    const rumpunMarital =
-      maritalCol && rumpunCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${rumpunCol} AS rumpun, p.${maritalCol} AS marital, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${rumpunCol}, p.${maritalCol}`,
-            ...params
-          )
-        : [];
-
-    const pendidikanGender =
-      genderCol && pendidikanCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${pendidikanCol} AS pendidikan, p.${genderCol} AS gender, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${pendidikanCol}, p.${genderCol}`,
-            ...params
-          )
-        : [];
-
-    const pendidikanMarital =
-      maritalCol && pendidikanCol
-        ? await prisma.$queryRawUnsafe(
-            `SELECT p.${pendidikanCol} AS pendidikan, p.${maritalCol} AS marital, COUNT(*) AS count
-             FROM pegawai_master p
-             ${clause}
-             GROUP BY p.${pendidikanCol}, p.${maritalCol}`,
-            ...params
-          )
-        : [];
+    pushCounterRows(unitStatus, "unit", "status", pegawai, (row) => row.nama_ukpd, (row) => inferStatus(row));
+    pushCounterRows(unitGender, "unit", "gender", pegawai, (row) => row.nama_ukpd, (row) => row.jenis_kelamin);
+    pushCounterRows(unitMarital, "unit", "marital", pegawai, (row) => row.nama_ukpd, (row) => row.status_perkawinan);
+    pushCounterRows(rumpunStatus, "rumpun", "status", pegawai, (row) => row.status_rumpun || row.nama_status_rumpun, (row) => inferStatus(row));
+    pushCounterRows(rumpunGender, "rumpun", "gender", pegawai, (row) => row.status_rumpun || row.nama_status_rumpun, (row) => row.jenis_kelamin);
+    pushCounterRows(rumpunMarital, "rumpun", "marital", pegawai, (row) => row.status_rumpun || row.nama_status_rumpun, (row) => row.status_perkawinan);
+    pushCounterRows(
+      pendidikanStatus,
+      "pendidikan",
+      "status",
+      pegawai,
+      (row) => row.pendidikan_sk_pangkat || row.jenjang_pendidikan || "(Tidak Tercatat)",
+      (row) => inferStatus(row)
+    );
+    pushCounterRows(
+      pendidikanGender,
+      "pendidikan",
+      "gender",
+      pegawai,
+      (row) => row.pendidikan_sk_pangkat || row.jenjang_pendidikan || "(Tidak Tercatat)",
+      (row) => row.jenis_kelamin
+    );
+    pushCounterRows(
+      pendidikanMarital,
+      "pendidikan",
+      "marital",
+      pegawai,
+      (row) => row.pendidikan_sk_pangkat || row.jenjang_pendidikan || "(Tidak Tercatat)",
+      (row) => row.status_perkawinan
+    );
 
     return NextResponse.json(
       jsonSafe({

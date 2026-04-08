@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonSafe } from "@/lib/json";
+import { fetchLegacyPegawaiById } from "../_legacy";
 
 const MASTER_COLUMNS = [
   "nama_ukpd",
@@ -73,13 +74,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = BigInt(params.id);
-
-    const pegawaiRows = await prisma.$queryRawUnsafe(
-      "SELECT * FROM pegawai_master WHERE id_pegawai = ?",
-      id
-    );
-    const pegawai = Array.isArray(pegawaiRows) ? pegawaiRows[0] : null;
+    const pegawai = await fetchLegacyPegawaiById(String(params.id || ""));
 
     if (!pegawai) {
       return NextResponse.json(
@@ -88,79 +83,7 @@ export async function GET(
       );
     }
 
-    const [alamat, pasanganRows, anak] = await Promise.all([
-      prisma.alamat.findMany({ where: { id_pegawai: id } }),
-      prisma.$queryRawUnsafe("SELECT * FROM pasangan WHERE id_pegawai = ? LIMIT 1", id),
-      prisma.anak.findMany({ where: { id_pegawai: id }, orderBy: { urutan: "asc" } }),
-    ]);
-    const pasangan = Array.isArray(pasanganRows) ? pasanganRows[0] : pasanganRows;
-
-    const [
-      gaji_pokok,
-      hukuman_disiplin,
-      jabatan_fungsional,
-      jabatan_struktural,
-      pangkat,
-      pendidikan_formal,
-      pendidikan_nonformal,
-      penghargaan,
-      skp,
-    ] = await Promise.all([
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_gaji_pokok WHERE id_pegawai = ? ORDER BY tmt DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_hukuman_disiplin WHERE id_pegawai = ? ORDER BY tanggal_mulai DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_jabatan_fungsional WHERE id_pegawai = ? ORDER BY tmt DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_jabatan_struktural WHERE id_pegawai = ? ORDER BY tmt DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_pangkat WHERE id_pegawai = ? ORDER BY tmt DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_pendidikan_formal WHERE id_pegawai = ? ORDER BY tanggal_ijazah DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_pendidikan_nonformal WHERE id_pegawai = ? ORDER BY tanggal_ijazah DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_penghargaan WHERE id_pegawai = ? ORDER BY tanggal_sk DESC",
-        id
-      ),
-      prisma.$queryRawUnsafe(
-        "SELECT * FROM drh_skp WHERE id_pegawai = ? ORDER BY tahun DESC",
-        id
-      ),
-    ]);
-
-    return NextResponse.json(
-      jsonSafe({
-        ...pegawai,
-        alamat,
-        pasangan,
-        anak,
-        gaji_pokok,
-        hukuman_disiplin,
-        jabatan_fungsional,
-        jabatan_struktural,
-        pangkat,
-        pendidikan_formal,
-        pendidikan_nonformal,
-        penghargaan,
-        skp,
-      })
-    );
+    return NextResponse.json(jsonSafe(pegawai));
   } catch (error) {
     console.error('Error fetching pegawai detail:', error);
     return NextResponse.json(

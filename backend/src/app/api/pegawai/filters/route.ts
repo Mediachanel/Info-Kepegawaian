@@ -1,26 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonSafe } from "@/lib/json";
+import { fetchLegacyPegawaiFilters } from "../_legacy";
 
 export async function GET(_request: NextRequest) {
   try {
-    const jabatanRows = await prisma.pegawai_master.findMany({
-      select: { nama_jabatan_orb: true },
-      distinct: ["nama_jabatan_orb"],
-    });
-    const statusRows = await prisma.pegawai_master.findMany({
-      select: { jenis_pegawai: true },
-      distinct: ["jenis_pegawai"],
-    });
-
-    const jabatan = jabatanRows
-      .map((row) => row.nama_jabatan_orb)
-      .filter(Boolean)
-      .sort();
-    const status = statusRows
-      .map((row) => row.jenis_pegawai)
-      .filter(Boolean)
-      .sort();
+    const { jabatan, status } = await fetchLegacyPegawaiFilters();
 
     return NextResponse.json(jsonSafe({ jabatan, status }));
   } catch (error) {
