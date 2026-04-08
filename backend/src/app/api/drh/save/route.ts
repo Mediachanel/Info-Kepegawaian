@@ -254,7 +254,7 @@ export async function POST(req: Request) {
     const pendidikanSummary = pickHighestPendidikan(pendidikanFormal);
 
     const pangkatRows = Array.isArray(body.riwayat_pangkat) ? body.riwayat_pangkat : [];
-    const latestPangkat = pangkatRows.reduce<any>((acc, row) => {
+    const latestPangkat = pangkatRows.reduce((acc: any, row: any) => {
       const tmt = toSqlDate(row?.tmt);
       const tmtTime = tmt ? new Date(tmt).getTime() : 0;
       if (!acc || tmtTime > acc.tmtTime) {
