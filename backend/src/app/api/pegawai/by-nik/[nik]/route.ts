@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonSafe } from "@/lib/json";
-import { fetchLegacyPegawaiByNik } from "../_legacy";
+import { fetchLegacyPegawaiByNik } from "../../_legacy";
 
 export async function GET(
   _request: NextRequest,
