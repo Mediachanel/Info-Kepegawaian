@@ -17,3 +17,7 @@ pnpm-debug.log*
 Thumbs.db
 
 *.tsbuildinfo
+
+next-dev*.log
+deploy/.staging*/
+deploy/*.zip
