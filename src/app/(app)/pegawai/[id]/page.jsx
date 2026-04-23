@@ -1,9 +1,11 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import { Edit, Mail, MapPin, Phone } from "lucide-react";
+import { filterPegawaiByRole, getPegawaiWilayah } from "@/lib/auth/access";
+import { getCurrentUser } from "@/lib/auth/session";
+import { getPegawaiById, getPegawaiDetailData, getUkpdData } from "@/lib/data/pegawaiStore";
+import { getPegawaiPhotoUrl } from "@/lib/helpers/pegawaiPhoto";
 import StatusBadge from "@/components/ui/StatusBadge";
 
 function valueOrDash(value) {
@@ -103,24 +105,49 @@ function ListSection({ title, columns, rows, emptyText = "-" }) {
   );
 }
 
-export default function DetailPegawaiPage({ params }) {
-  const [pegawai, setPegawai] = useState(null);
+function cleanNip(value) {
+  return String(value || "").trim().replace(/^`+/, "");
+}
 
-  useEffect(() => {
-    fetch(`/api/pegawai/${params.id}`).then((res) => res.json()).then((payload) => setPegawai(payload.data));
-  }, [params.id]);
+export default async function DetailPegawaiPage({ params }) {
+  const user = await getCurrentUser();
 
-  const computed = useMemo(() => {
-    if (!pegawai) return null;
-    return {
-      tempatTanggalLahir: [pegawai.tempat_lahir, formatDate(pegawai.tanggal_lahir)].filter(Boolean).join(" / "),
-      umur: durationFrom(pegawai.tanggal_lahir),
-      tmtKerja: `${formatDate(pegawai.tmt_kerja_ukpd)} - ${durationFrom(pegawai.tmt_kerja_ukpd)}`,
-      jabatan: pegawai.nama_jabatan_menpan || pegawai.nama_jabatan_orb || "-"
-    };
-  }, [pegawai]);
+  if (!user) {
+    redirect("/login");
+  }
 
-  if (!pegawai || !computed) return <div className="h-64 animate-pulse rounded-2xl bg-white" />;
+  const [pegawaiRow, ukpdList] = await Promise.all([
+    getPegawaiById(params.id),
+    getUkpdData()
+  ]);
+
+  const pegawai = pegawaiRow ? filterPegawaiByRole([pegawaiRow], user, ukpdList)[0] : null;
+  if (!pegawai) {
+    notFound();
+  }
+
+  const [detail, photoUrl] = await Promise.all([
+    getPegawaiDetailData(params.id),
+    getPegawaiPhotoUrl(params.id)
+  ]);
+
+  const alamat = detail.alamat || [];
+  const alamatKtp = alamat.find((entry) => String(entry.tipe || "").toLowerCase() === "ktp");
+  const alamatDomisili = alamat.find((entry) => String(entry.tipe || "").toLowerCase() === "domisili");
+  const tempatTanggalLahir = [pegawai.tempat_lahir, formatDate(pegawai.tanggal_lahir)].filter(Boolean).join(" / ");
+  const umur = durationFrom(pegawai.tanggal_lahir);
+  const tmtKerja = `${formatDate(pegawai.tmt_kerja_ukpd)} - ${durationFrom(pegawai.tmt_kerja_ukpd)}`;
+  const jabatan = pegawai.nama_jabatan_menpan || pegawai.nama_jabatan_orb || "-";
+  const pegawaiDetail = {
+    ...pegawai,
+    ...detail,
+    nip: cleanNip(pegawai.nip),
+    wilayah: getPegawaiWilayah(pegawai, ukpdList),
+    photo_url: photoUrl,
+    alamat,
+    alamat_ktp: alamatKtp?.alamat_lengkap || null,
+    alamat_domisili: alamatDomisili?.alamat_lengkap || null
+  };
 
   return (
     <div className="space-y-4">
@@ -128,20 +155,20 @@ export default function DetailPegawaiPage({ params }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-4">
             <div className="grid h-24 w-24 shrink-0 place-items-center rounded-lg bg-slate-100 ring-1 ring-slate-200">
-              <Image src={pegawai.photo_url || "/FOTO/OIP.JPG"} alt={`Foto ${pegawai.nama || "pegawai"}`} width={96} height={96} className="h-24 w-24 object-cover" priority unoptimized />
+              <Image src={pegawaiDetail.photo_url || "/FOTO/OIP.JPG"} alt={`Foto ${pegawaiDetail.nama || "pegawai"}`} width={96} height={96} className="h-24 w-24 object-cover" priority unoptimized />
             </div>
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap gap-2">
-                <StatusBadge status={pegawai.jenis_pegawai} />
-                <StatusBadge status={pegawai.kondisi} />
+                <StatusBadge status={pegawaiDetail.jenis_pegawai} />
+                <StatusBadge status={pegawaiDetail.kondisi} />
               </div>
-              <h1 className="break-words text-2xl font-extrabold tracking-normal text-slate-950">{fullNameWithTitle(pegawai)}</h1>
-              <p className="mt-1 text-base font-medium text-slate-600">{computed.jabatan}</p>
-              <p className="mt-2 text-sm font-bold text-slate-900">Unit / UKPD: {valueOrDash(pegawai.nama_ukpd)}</p>
-              <p className="mt-1 text-sm text-slate-600">Status Aktif: {valueOrDash(pegawai.kondisi)}</p>
+              <h1 className="break-words text-2xl font-extrabold tracking-normal text-slate-950">{fullNameWithTitle(pegawaiDetail)}</h1>
+              <p className="mt-1 text-base font-medium text-slate-600">{jabatan}</p>
+              <p className="mt-2 text-sm font-bold text-slate-900">Unit / UKPD: {valueOrDash(pegawaiDetail.nama_ukpd)}</p>
+              <p className="mt-1 text-sm text-slate-600">Status Aktif: {valueOrDash(pegawaiDetail.kondisi)}</p>
             </div>
           </div>
-          <Link className="btn-primary self-start" href={`/pegawai/${pegawai.id_pegawai}/edit`}>
+          <Link className="btn-primary self-start" href={`/pegawai/${pegawaiDetail.id_pegawai}/edit`}>
             <Edit className="h-4 w-4" />
             Edit Profil
           </Link>
@@ -149,52 +176,52 @@ export default function DetailPegawaiPage({ params }) {
       </section>
 
       <ProfileSection title="Identitas" items={[
-        { label: "NIP", value: pegawai.nip },
-        { label: "Nama Lengkap", value: fullNameWithTitle(pegawai) },
-        { label: "Jenis Kelamin", value: pegawai.jenis_kelamin },
-        { label: "Tempat / Tanggal Lahir", value: computed.tempatTanggalLahir },
-        { label: "Umur", value: computed.umur },
-        { label: "Agama", value: pegawai.agama },
-        { label: "Status Pernikahan", value: pegawai.status_perkawinan },
-        { label: "Golongan Darah", value: pegawai.golongan_darah },
-        { label: "NPWP", value: pegawai.npwp },
-        { label: "No BPJS", value: pegawai.no_bpjs }
+        { label: "NIP", value: pegawaiDetail.nip },
+        { label: "Nama Lengkap", value: fullNameWithTitle(pegawaiDetail) },
+        { label: "Jenis Kelamin", value: pegawaiDetail.jenis_kelamin },
+        { label: "Tempat / Tanggal Lahir", value: tempatTanggalLahir },
+        { label: "Umur", value: umur },
+        { label: "Agama", value: pegawaiDetail.agama },
+        { label: "Status Pernikahan", value: pegawaiDetail.status_perkawinan },
+        { label: "Golongan Darah", value: pegawaiDetail.golongan_darah },
+        { label: "NPWP", value: pegawaiDetail.npwp },
+        { label: "No BPJS", value: pegawaiDetail.no_bpjs }
       ]} />
 
       <ProfileSection title="Kepegawaian" items={[
-        { label: "Jenis Pegawai", value: pegawai.jenis_pegawai },
-        { label: "Status Aktif", value: pegawai.kondisi },
-        { label: "Status Rumpun", value: pegawai.status_rumpun },
-        { label: "Jenis Kontrak", value: pegawai.jenis_kontrak },
-        { label: "Jabatan Pergub", value: pegawai.nama_jabatan_orb },
-        { label: "Jabatan Kepmenpan", value: pegawai.nama_jabatan_menpan },
-        { label: "TMT Kerja UKPD", value: computed.tmtKerja },
-        { label: "UKPD", value: pegawai.nama_ukpd },
-        { label: "Wilayah", value: pegawai.wilayah },
-        { label: "Pangkat / Golongan", value: pegawai.pangkat_golongan },
-        { label: "TMT Pangkat", value: formatDate(pegawai.tmt_pangkat_terakhir) }
+        { label: "Jenis Pegawai", value: pegawaiDetail.jenis_pegawai },
+        { label: "Status Aktif", value: pegawaiDetail.kondisi },
+        { label: "Status Rumpun", value: pegawaiDetail.status_rumpun },
+        { label: "Jenis Kontrak", value: pegawaiDetail.jenis_kontrak },
+        { label: "Jabatan Pergub", value: pegawaiDetail.nama_jabatan_orb },
+        { label: "Jabatan Kepmenpan", value: pegawaiDetail.nama_jabatan_menpan },
+        { label: "TMT Kerja UKPD", value: tmtKerja },
+        { label: "UKPD", value: pegawaiDetail.nama_ukpd },
+        { label: "Wilayah", value: pegawaiDetail.wilayah },
+        { label: "Pangkat / Golongan", value: pegawaiDetail.pangkat_golongan },
+        { label: "TMT Pangkat", value: formatDate(pegawaiDetail.tmt_pangkat_terakhir) }
       ]} />
 
       <ProfileSection title="Pendidikan & Gelar" items={[
-        { label: "Jenjang Pendidikan", value: pegawai.jenjang_pendidikan },
-        { label: "Jurusan Pendidikan", value: pegawai.program_studi },
-        { label: "Universitas", value: pegawai.nama_universitas },
-        { label: "Gelar Depan", value: pegawai.gelar_depan },
-        { label: "Gelar Belakang", value: pegawai.gelar_belakang }
+        { label: "Jenjang Pendidikan", value: pegawaiDetail.jenjang_pendidikan },
+        { label: "Jurusan Pendidikan", value: pegawaiDetail.program_studi },
+        { label: "Universitas", value: pegawaiDetail.nama_universitas },
+        { label: "Gelar Depan", value: pegawaiDetail.gelar_depan },
+        { label: "Gelar Belakang", value: pegawaiDetail.gelar_belakang }
       ]} />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-extrabold text-slate-950">Kontak & Alamat</h2>
         <div className="mt-3 grid gap-3 lg:grid-cols-4">
-          <InfoField label="Email" value={pegawai.email} />
-          <InfoField label="Telepon" value={pegawai.no_hp_pegawai} />
-          <InfoField label="Alamat KTP" value={pegawai.alamat_ktp || pegawai.alamat || "-"} />
-          <InfoField label="Alamat Domisili" value={pegawai.alamat_domisili || pegawai.alamat || "-"} />
+          <InfoField label="Email" value={pegawaiDetail.email} />
+          <InfoField label="Telepon" value={pegawaiDetail.no_hp_pegawai} />
+          <InfoField label="Alamat KTP" value={pegawaiDetail.alamat_ktp || pegawaiDetail.alamat || "-"} />
+          <InfoField label="Alamat Domisili" value={pegawaiDetail.alamat_domisili || pegawaiDetail.alamat || "-"} />
         </div>
         <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
-          <span className="inline-flex items-center gap-2"><Mail className="h-4 w-4 text-teal-700" />{valueOrDash(pegawai.email)}</span>
-          <span className="inline-flex items-center gap-2"><Phone className="h-4 w-4 text-teal-700" />{valueOrDash(pegawai.no_hp_pegawai)}</span>
-          <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-teal-700" />{valueOrDash(pegawai.wilayah)}</span>
+          <span className="inline-flex items-center gap-2"><Mail className="h-4 w-4 text-teal-700" />{valueOrDash(pegawaiDetail.email)}</span>
+          <span className="inline-flex items-center gap-2"><Phone className="h-4 w-4 text-teal-700" />{valueOrDash(pegawaiDetail.no_hp_pegawai)}</span>
+          <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-teal-700" />{valueOrDash(pegawaiDetail.wilayah)}</span>
         </div>
       </section>
 
@@ -209,12 +236,12 @@ export default function DetailPegawaiPage({ params }) {
           { key: "pekerjaan", label: "Pekerjaan" }
         ]}
         rows={[
-          ...(pegawai.pasangan || []).map((item) => ({
+          ...(pegawaiDetail.pasangan || []).map((item) => ({
             ...item,
             jenis: "Pasangan",
             jenis_kelamin: "-"
           })),
-          ...(pegawai.anak || []).map((item) => ({
+          ...(pegawaiDetail.anak || []).map((item) => ({
             ...item,
             jenis: `Anak ${item.urutan || ""}`.trim()
           }))
@@ -231,7 +258,7 @@ export default function DetailPegawaiPage({ params }) {
           { key: "nomor_sk", label: "Nomor SK" },
           { key: "keterangan", label: "Keterangan" }
         ]}
-        rows={pegawai.riwayat_jabatan || []}
+        rows={pegawaiDetail.riwayat_jabatan || []}
       />
 
       <ListSection
@@ -243,7 +270,7 @@ export default function DetailPegawaiPage({ params }) {
           { key: "nomor_sk", label: "Nomor SK" },
           { key: "keterangan", label: "Keterangan" }
         ]}
-        rows={pegawai.riwayat_pangkat || []}
+        rows={pegawaiDetail.riwayat_pangkat || []}
       />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

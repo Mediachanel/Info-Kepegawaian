@@ -54,7 +54,26 @@ const PEGAWAI_COLUMNS = [
   "jenis_kelamin_raw"
 ];
 
+const DASHBOARD_PEGAWAI_COLUMNS = [
+  "id_pegawai",
+  "nama",
+  "jenis_kelamin",
+  "nama_ukpd",
+  "jenis_ukpd",
+  "wilayah",
+  "jenis_pegawai",
+  "status_rumpun",
+  "nama_jabatan_menpan",
+  "jenjang_pendidikan",
+  "kondisi",
+  "id_ukpd",
+  "created_at",
+  "nip"
+];
+
 const PEGAWAI_MUTABLE_COLUMNS = PEGAWAI_COLUMNS.filter((column) => column !== "id_pegawai");
+const PEGAWAI_SELECT_COLUMNS = PEGAWAI_COLUMNS.map((column) => `\`${column}\``).join(", ");
+const DASHBOARD_PEGAWAI_SELECT_COLUMNS = DASHBOARD_PEGAWAI_COLUMNS.map((column) => `\`${column}\``).join(", ");
 
 function toDateString(value) {
   if (!value || typeof value !== "object" || !("toISOString" in value)) return value;
@@ -187,7 +206,19 @@ export async function getUkpdData() {
 }
 
 export async function getPegawaiData() {
-  return queryRows(`SELECT * FROM ${TABLES.pegawai} ORDER BY \`id_pegawai\` DESC`);
+  return queryRows(`SELECT ${PEGAWAI_SELECT_COLUMNS} FROM ${TABLES.pegawai} ORDER BY \`id_pegawai\` DESC`);
+}
+
+export async function getPegawaiDashboardData() {
+  return queryRows(`SELECT ${DASHBOARD_PEGAWAI_SELECT_COLUMNS} FROM ${TABLES.pegawai} ORDER BY \`id_pegawai\` DESC`);
+}
+
+export async function getPegawaiById(id) {
+  const rows = await queryRows(
+    `SELECT ${PEGAWAI_SELECT_COLUMNS} FROM ${TABLES.pegawai} WHERE \`id_pegawai\` = ? LIMIT 1`,
+    [Number(id)]
+  );
+  return rows[0] || null;
 }
 
 export async function getPegawaiAlamat(id) {

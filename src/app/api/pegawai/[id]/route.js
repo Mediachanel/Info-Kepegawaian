@@ -2,7 +2,7 @@ import { z } from "zod";
 import { filterPegawaiByRole, getPegawaiWilayah } from "@/lib/auth/access";
 import { requireAuth } from "@/lib/auth/requireAuth";
 import { fail, ok } from "@/lib/helpers/response";
-import { deletePegawaiData, getPegawaiData, getPegawaiDetailData, getUkpdData, updatePegawaiData } from "@/lib/data/pegawaiStore";
+import { deletePegawaiData, getPegawaiById, getPegawaiDetailData, getUkpdData, updatePegawaiData } from "@/lib/data/pegawaiStore";
 import { deletePegawaiPhoto, getPegawaiPhotoUrl, savePegawaiPhoto } from "@/lib/helpers/pegawaiPhoto";
 
 const schema = z.object({
@@ -12,10 +12,6 @@ const schema = z.object({
   email: z.string().email().optional().or(z.literal(""))
 }).passthrough();
 
-function findAllowed(id, user, pegawaiMaster, ukpdList) {
-  return filterPegawaiByRole(pegawaiMaster, user, ukpdList).find((item) => item.id_pegawai === Number(id));
-}
-
 function cleanNip(value) {
   return String(value || "").trim().replace(/^`+/, "");
 }
@@ -23,20 +19,23 @@ function cleanNip(value) {
 export async function GET(_request, { params }) {
   const { user, error } = await requireAuth();
   if (error) return error;
-  const [pegawaiMaster, ukpdList] = await Promise.all([getPegawaiData(), getUkpdData()]);
-  const item = findAllowed(params.id, user, pegawaiMaster, ukpdList);
-  if (!item) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
+  const [item, ukpdList] = await Promise.all([getPegawaiById(params.id), getUkpdData()]);
+  const allowedItem = item ? filterPegawaiByRole([item], user, ukpdList)[0] : null;
+  const detailPromise = allowedItem ? getPegawaiDetailData(params.id) : Promise.resolve(null);
+  const photoPromise = allowedItem ? getPegawaiPhotoUrl(params.id) : Promise.resolve(null);
+  if (!allowedItem) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
 
-  const detail = await getPegawaiDetailData(params.id);
+  const [detail, photoUrl] = await Promise.all([detailPromise, photoPromise]);
+  const itemForResponse = allowedItem;
   const alamat = detail.alamat || [];
   const alamatKtp = alamat.find((entry) => String(entry.tipe || "").toLowerCase() === "ktp");
   const alamatDomisili = alamat.find((entry) => String(entry.tipe || "").toLowerCase() === "domisili");
 
   return ok({
-    ...item,
-    nip: cleanNip(item.nip),
-    wilayah: getPegawaiWilayah(item, ukpdList),
-    photo_url: await getPegawaiPhotoUrl(params.id),
+    ...itemForResponse,
+    nip: cleanNip(itemForResponse.nip),
+    wilayah: getPegawaiWilayah(itemForResponse, ukpdList),
+    photo_url: photoUrl,
     alamat,
     alamat_ktp: alamatKtp?.alamat_lengkap || null,
     alamat_domisili: alamatDomisili?.alamat_lengkap || null,
@@ -47,9 +46,10 @@ export async function GET(_request, { params }) {
 export async function PUT(request, { params }) {
   const { user, error } = await requireAuth();
   if (error) return error;
-  const [pegawaiMaster, ukpdList] = await Promise.all([getPegawaiData(), getUkpdData()]);
-  const current = findAllowed(params.id, user, pegawaiMaster, ukpdList);
-  if (!current) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
+  const [current, ukpdList] = await Promise.all([getPegawaiById(params.id), getUkpdData()]);
+  const allowedCurrent = current ? filterPegawaiByRole([current], user, ukpdList)[0] : null;
+  const currentForUpdate = allowedCurrent;
+  if (!currentForUpdate) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return fail("Validasi data pegawai gagal.", 422, parsed.error.flatten());
 
@@ -57,7 +57,7 @@ export async function PUT(request, { params }) {
   const photoUpload = payload.photo_upload;
   delete payload.photo_upload;
 
-  const updated = { ...current, ...payload, id_pegawai: Number(params.id) };
+  const updated = { ...currentForUpdate, ...payload, id_pegawai: Number(params.id) };
   const allowed = filterPegawaiByRole([updated], user, ukpdList).length === 1;
   if (!allowed) return fail("Anda tidak boleh memindahkan pegawai ke UKPD atau wilayah lain.", 403);
   const saved = await updatePegawaiData(params.id, payload);
@@ -70,9 +70,9 @@ export async function PUT(request, { params }) {
 export async function DELETE(_request, { params }) {
   const { user, error } = await requireAuth();
   if (error) return error;
-  const [pegawaiMaster, ukpdList] = await Promise.all([getPegawaiData(), getUkpdData()]);
-  const current = findAllowed(params.id, user, pegawaiMaster, ukpdList);
-  if (!current) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
+  const [current, ukpdList] = await Promise.all([getPegawaiById(params.id), getUkpdData()]);
+  const allowedCurrent = current ? filterPegawaiByRole([current], user, ukpdList)[0] : null;
+  if (!allowedCurrent) return fail("Data pegawai tidak ditemukan atau tidak dapat diakses.", 404);
   const deleted = await deletePegawaiData(params.id);
   await deletePegawaiPhoto(params.id);
   return ok(deleted, "Pegawai berhasil dihapus");

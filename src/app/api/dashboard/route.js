@@ -1,8 +1,15 @@
 import { filterPegawaiByRole, getPegawaiWilayah } from "@/lib/auth/access";
 import { requireAuth } from "@/lib/auth/requireAuth";
-import { getPegawaiData, getUkpdData } from "@/lib/data/pegawaiStore";
+import { getPegawaiDashboardData, getUkpdData } from "@/lib/data/pegawaiStore";
 import { ok } from "@/lib/helpers/response";
 import { JENIS_PEGAWAI_OPTIONS, isJenisPegawai, normalizeJenisPegawai } from "@/lib/helpers/pegawaiStatus";
+
+const DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+const dashboardCache = new Map();
+
+function getDashboardCacheKey(user) {
+  return [user?.role || "-", user?.nama_ukpd || "-", user?.wilayah || "-"].join("|");
+}
 
 function countBy(items, keyFn) {
   return items.reduce((acc, item) => {
@@ -192,7 +199,13 @@ export async function GET() {
   const { user, error } = await requireAuth();
   if (error) return error;
 
-  const [pegawaiMaster, ukpdList] = await Promise.all([getPegawaiData(), getUkpdData()]);
+  const cacheKey = getDashboardCacheKey(user);
+  const cached = dashboardCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return ok(cached.payload);
+  }
+
+  const [pegawaiMaster, ukpdList] = await Promise.all([getPegawaiDashboardData(), getUkpdData()]);
   const data = filterPegawaiByRole(pegawaiMaster, user, ukpdList);
   const summary = {
     total: data.length,
@@ -207,7 +220,7 @@ export async function GET() {
   const wilayahUkpd = ukpdList.filter((item) => visibleUkpd.includes(item.nama_ukpd));
   const activeData = data.filter((item) => String(item.kondisi || "").toUpperCase() === "AKTIF");
 
-  return ok({
+  const payload = {
     user,
     summary,
     charts: {
@@ -225,5 +238,12 @@ export async function GET() {
       mutasi: 0,
       putusJf: 0
     }
+  };
+
+  dashboardCache.set(cacheKey, {
+    payload,
+    expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS
   });
+
+  return ok(payload);
 }
