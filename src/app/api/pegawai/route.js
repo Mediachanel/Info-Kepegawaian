@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth/requireAuth";
 import { fail, ok } from "@/lib/helpers/response";
 import { createPegawaiData, getPegawaiData, getUkpdData } from "@/lib/data/pegawaiStore";
 import { getConnectedPool } from "@/lib/db/mysql";
+import { getPegawaiPhotoUrl, savePegawaiPhoto } from "@/lib/helpers/pegawaiPhoto";
 import { ROLES } from "@/lib/constants/roles";
 
 const schema = z.object({
@@ -126,9 +127,14 @@ export async function POST(request) {
   if (!parsed.success) return fail("Validasi data pegawai gagal.", 422, parsed.error.flatten());
 
   const nextItem = { ...parsed.data };
+  const photoUpload = nextItem.photo_upload;
+  delete nextItem.photo_upload;
   const ukpdList = await getUkpdData();
   const allowed = filterPegawaiByRole([nextItem], user, ukpdList).length === 1;
   if (!allowed) return fail("Anda tidak boleh membuat pegawai untuk UKPD atau wilayah lain.", 403);
   const created = await createPegawaiData(nextItem);
-  return ok(created, "Pegawai berhasil ditambahkan");
+  if (photoUpload) {
+    await savePegawaiPhoto(created.id_pegawai, photoUpload);
+  }
+  return ok({ ...created, photo_url: await getPegawaiPhotoUrl(created.id_pegawai) }, "Pegawai berhasil ditambahkan");
 }

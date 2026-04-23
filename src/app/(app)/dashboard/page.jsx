@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BriefcaseMedical, ChevronDown, ChevronRight, Download, FilePlus2, Search, ShieldCheck, UserRoundCheck, UsersRound } from "lucide-react";
+import { ArrowRight, BookUser, BriefcaseMedical, ChevronDown, ChevronRight, Download, FilePlus2, Search, ShieldCheck, UserRoundCheck, UsersRound } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiCard from "@/components/cards/KpiCard";
 import DashboardChartCard from "@/components/charts/DashboardChartCard";
@@ -802,6 +802,12 @@ export default function DashboardPage() {
     { key: "nama_ukpd", header: "UKPD" }
   ];
   const activeChartView = data.chartViews?.[chartView] || data.chartViews?.statusPegawai;
+  const quickLinks = [
+    { href: "/pegawai/new", label: "Tambah Pegawai", helper: "Input pegawai baru", icon: FilePlus2 },
+    { href: "/pegawai", label: "Data Pegawai", helper: "Kelola profil dan riwayat", icon: UsersRound },
+    { href: "/duk", label: "DUK", helper: "Pantau urutan kepangkatan", icon: BookUser },
+    { href: "/profil", label: "Profil Akun", helper: "Lihat sesi aktif", icon: ShieldCheck }
+  ];
 
   return (
     <>
@@ -810,6 +816,58 @@ export default function DashboardPage() {
         description={`Dashboard ${data.user.role} untuk ${data.user.wilayah || data.user.nama_ukpd}. Data Yang Ditampilkan Sesuai Session Login.`}
         action={<Link className="btn-primary" href="/pegawai/new"><FilePlus2 className="h-4 w-4" /> Tambah Pegawai</Link>}
       />
+
+      <section className="surface relative overflow-hidden p-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(13,148,136,0.16),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.12),transparent_28%)]" />
+        <div className="relative grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-dinkes-100 bg-dinkes-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-dinkes-700">
+              Ringkasan Session
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-950">Monitoring SDM kesehatan dalam satu layar kerja.</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Akses cepat untuk pengelolaan pegawai, DUK, dan analitik distribusi pegawai berdasarkan UKPD, rumpun, serta jabatan.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {quickLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.href} href={item.href} className="rounded-2xl border border-slate-200 bg-white/90 p-4 transition hover:-translate-y-0.5 hover:border-dinkes-200 hover:shadow-md">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="rounded-xl bg-dinkes-50 p-3 text-dinkes-700">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <p className="mt-4 text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="mt-1 text-sm text-slate-500">{item.helper}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cakupan Data</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(data.summary.total)}</p>
+              <p className="mt-1 text-sm text-slate-500">Pegawai aktif di scope session ini.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unit Terpantau</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(data.analytics?.ukpdSummary?.length || 0)}</p>
+              <p className="mt-1 text-sm text-slate-500">Jumlah UKPD yang muncul pada dashboard.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Komposisi ASN</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(data.summary.pnsCpns + data.summary.pppk + data.summary.pppkParuhWaktu)}</p>
+              <p className="mt-1 text-sm text-slate-500">Gabungan PNS/CPNS dan PPPK.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <KpiCard title="Total Pegawai" value={data.summary.total} helper="Jumlah Pegawai Seluruh UKPD" icon={UsersRound} />
@@ -822,15 +880,23 @@ export default function DashboardPage() {
 
       {activeChartView ? (
         <>
-          <div className="mt-6 flex justify-end">
-            <label className="flex items-center gap-3 text-sm text-slate-600">
-              <span>Tampilan chart:</span>
-              <select className="input min-w-44 py-2" value={chartView} onChange={(event) => setChartView(event.target.value)}>
-                {Object.entries(data.chartViews || {}).map(([key, view]) => (
-                  <option key={key} value={key}>{view.label}</option>
-                ))}
-              </select>
-            </label>
+          <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Visual Analitik</h2>
+              <p className="text-sm text-slate-500">Ganti mode grafik untuk membaca distribusi pegawai dari perspektif yang berbeda.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(data.chartViews || {}).map(([key, view]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${chartView === key ? "bg-dinkes-700 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                  onClick={() => setChartView(key)}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <section className="mt-3 grid gap-5 xl:grid-cols-2">

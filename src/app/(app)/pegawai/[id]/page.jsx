@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Edit, Mail, MapPin, Phone } from "lucide-react";
-import dinkesLogo from "@/Foto/Dinkes.png";
 import StatusBadge from "@/components/ui/StatusBadge";
 
 function valueOrDash(value) {
@@ -68,6 +67,42 @@ function ProfileSection({ title, items }) {
   );
 }
 
+function ListSection({ title, columns, rows, emptyText = "-" }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="text-lg font-extrabold text-slate-950">{title}</h2>
+      {!rows?.length ? (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">{emptyText}</div>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                {columns.map((column) => (
+                  <th key={column.key} className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {column.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row, index) => (
+                <tr key={row.id || `${title}-${index}`}>
+                  {columns.map((column) => (
+                    <td key={column.key} className="px-3 py-2 text-sm text-slate-700">
+                      {column.render ? column.render(row, index) : valueOrDash(row[column.key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DetailPegawaiPage({ params }) {
   const [pegawai, setPegawai] = useState(null);
 
@@ -93,7 +128,7 @@ export default function DetailPegawaiPage({ params }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-4">
             <div className="grid h-24 w-24 shrink-0 place-items-center rounded-lg bg-slate-100 ring-1 ring-slate-200">
-              <Image src={dinkesLogo} alt="Logo Dinas Kesehatan" className="h-20 w-20 object-contain" priority />
+              <Image src={pegawai.photo_url || "/FOTO/OIP.JPG"} alt={`Foto ${pegawai.nama || "pegawai"}`} width={96} height={96} className="h-24 w-24 object-cover" priority unoptimized />
             </div>
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap gap-2">
@@ -162,6 +197,54 @@ export default function DetailPegawaiPage({ params }) {
           <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-teal-700" />{valueOrDash(pegawai.wilayah)}</span>
         </div>
       </section>
+
+      <ListSection
+        title="Keluarga"
+        emptyText="Data keluarga belum tersedia."
+        columns={[
+          { key: "jenis", label: "Jenis" },
+          { key: "nama", label: "Nama" },
+          { key: "jenis_kelamin", label: "Jenis Kelamin" },
+          { key: "tanggal_lahir", label: "Tanggal Lahir", render: (row) => formatDate(row.tanggal_lahir) },
+          { key: "pekerjaan", label: "Pekerjaan" }
+        ]}
+        rows={[
+          ...(pegawai.pasangan || []).map((item) => ({
+            ...item,
+            jenis: "Pasangan",
+            jenis_kelamin: "-"
+          })),
+          ...(pegawai.anak || []).map((item) => ({
+            ...item,
+            jenis: `Anak ${item.urutan || ""}`.trim()
+          }))
+        ]}
+      />
+
+      <ListSection
+        title="Riwayat Jabatan"
+        emptyText="Riwayat jabatan belum tersedia."
+        columns={[
+          { key: "nama_jabatan_menpan", label: "Jabatan", render: (row) => row.nama_jabatan_menpan || row.nama_jabatan_orb || "-" },
+          { key: "struktur_atasan_langsung", label: "Atasan" },
+          { key: "tmt_jabatan", label: "TMT", render: (row) => formatDate(row.tmt_jabatan) },
+          { key: "nomor_sk", label: "Nomor SK" },
+          { key: "keterangan", label: "Keterangan" }
+        ]}
+        rows={pegawai.riwayat_jabatan || []}
+      />
+
+      <ListSection
+        title="Riwayat Pangkat"
+        emptyText="Riwayat pangkat belum tersedia."
+        columns={[
+          { key: "pangkat_golongan", label: "Pangkat/Golongan" },
+          { key: "tmt_pangkat", label: "TMT", render: (row) => formatDate(row.tmt_pangkat) },
+          { key: "nomor_sk", label: "Nomor SK" },
+          { key: "keterangan", label: "Keterangan" }
+        ]}
+        rows={pegawai.riwayat_pangkat || []}
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-extrabold text-slate-950">Catatan</h2>

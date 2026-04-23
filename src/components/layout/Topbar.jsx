@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import RoleBadge from "@/components/ui/RoleBadge";
 
@@ -21,6 +22,9 @@ export default function Topbar({ user, onOpenMenu, collapsed, onToggleSidebar })
           </label>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/profil" className="btn-secondary hidden py-2 sm:inline-flex">
+            Lihat Profil
+          </Link>
           <RoleBadge role={user?.role} />
           <div className="hidden text-right sm:block">
             <p className="text-sm font-semibold text-slate-900">{user?.username}</p>

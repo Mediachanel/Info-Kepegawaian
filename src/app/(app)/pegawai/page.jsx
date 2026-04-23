@@ -135,9 +135,18 @@ export default function PegawaiPage() {
             startNumber={(page - 1) * pageSize + 1}
             actions={(item) => (
               <div className="flex items-center gap-2">
-                <Link className="rounded-lg p-2 text-dinkes-700 hover:bg-dinkes-50 focus-ring" href={`/pegawai/${item.id_pegawai}`} target="_blank" rel="noopener noreferrer" aria-label="Lihat profil"><Eye className="h-4 w-4" /></Link>
-                <Link className="rounded-lg p-2 text-slate-700 hover:bg-slate-100 focus-ring" href={`/pegawai/${item.id_pegawai}/edit`} aria-label="Edit"><Edit className="h-4 w-4" /></Link>
-                <button className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 focus-ring" onClick={() => setDeleteTarget(item)} aria-label="Hapus"><Trash2 className="h-4 w-4" /></button>
+                <Link className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-dinkes-700 hover:bg-dinkes-50 focus-ring" href={`/pegawai/${item.id_pegawai}`} target="_blank" rel="noopener noreferrer" aria-label="Lihat profil" title="Lihat profil">
+                  <Eye className="h-4 w-4" />
+                  <span className="hidden lg:inline">Lihat Profil</span>
+                </Link>
+                <Link className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-slate-700 hover:bg-slate-100 focus-ring" href={`/pegawai/${item.id_pegawai}/edit`} aria-label="Edit" title="Edit">
+                  <Edit className="h-4 w-4" />
+                  <span className="hidden lg:inline">Edit</span>
+                </Link>
+                <button className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-rose-600 hover:bg-rose-50 focus-ring" onClick={() => setDeleteTarget(item)} aria-label="Hapus" title="Hapus">
+                  <Trash2 className="h-4 w-4" />
+                  <span className="hidden lg:inline">Hapus</span>
+                </button>
               </div>
             )}
           />

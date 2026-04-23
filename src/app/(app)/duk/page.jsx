@@ -78,10 +78,10 @@ export default function DukPage() {
   }, []);
 
   const pangkatOptions = useMemo(() => [...new Set(rows.map((item) => item.pangkat_golongan).filter(Boolean))], [rows]);
-  const jabatanOptions = useMemo(() => [...new Set(rows.map((item) => item.nama_jabatan_menpan).filter(Boolean))], [rows]);
+  const jabatanOptions = useMemo(() => [...new Set(rows.map((item) => (item.nama_jabatan_menpan || item.nama_jabatan_orb)).filter(Boolean))], [rows]);
   const filtered = rows.filter((item) => {
     const matchSearch = [item.nama, item.nip, item.nama_ukpd].join(" ").toLowerCase().includes(search.toLowerCase());
-    return matchSearch && (!pangkat || item.pangkat_golongan === pangkat) && (!jabatan || item.nama_jabatan_menpan === jabatan);
+    return matchSearch && (!pangkat || item.pangkat_golongan === pangkat) && (!jabatan || (item.nama_jabatan_menpan || item.nama_jabatan_orb) === jabatan);
   }).sort((a, b) => (
     pangkatRank(a.pangkat_golongan) - pangkatRank(b.pangkat_golongan)
     || timeValue(a.tmt_pangkat_terakhir) - timeValue(b.tmt_pangkat_terakhir)
@@ -99,8 +99,8 @@ export default function DukPage() {
         item.nip,
         item.pangkat_golongan,
         item.tmt_pangkat_terakhir,
-        item.nama_jabatan_menpan,
-        item.jenjang_pendidikan,
+        item.nama_jabatan_menpan || item.nama_jabatan_orb,
+        [item.jenjang_pendidikan, item.program_studi].filter(Boolean).join(" - "),
         item.nama_ukpd
       ].map(escapeCsv).join(","))
     ];
@@ -137,13 +137,51 @@ export default function DukPage() {
           data={filtered}
           showNumber
           columns={[
-            { key: "nama", header: "Nama" },
-            { key: "nip", header: "NIP" },
-            { key: "pangkat_golongan", header: "Pangkat/Gol" },
-            { key: "tmt_pangkat_terakhir", header: "TMT Pangkat" },
-            { key: "nama_jabatan_menpan", header: "Jabatan" },
-            { key: "jenjang_pendidikan", header: "Pendidikan" },
-            { key: "nama_ukpd", header: "Unit Kerja" }
+            {
+              key: "nama",
+              header: "Nama",
+              cellClassName: "min-w-[220px] whitespace-normal font-medium text-slate-900"
+            },
+            {
+              key: "nip",
+              header: "NIP",
+              headerClassName: "w-[170px]",
+              cellClassName: "w-[170px]"
+            },
+            {
+              key: "pangkat_golongan",
+              header: "Pangkat/Gol",
+              headerClassName: "w-[180px]",
+              cellClassName: "w-[180px] whitespace-normal"
+            },
+            {
+              key: "tmt_pangkat_terakhir",
+              header: "TMT Pangkat",
+              headerClassName: "w-[130px]",
+              cellClassName: "w-[130px]"
+            },
+            {
+              key: "nama_jabatan_menpan",
+              header: "Jabatan",
+              render: (item) => item.nama_jabatan_menpan || item.nama_jabatan_orb || "-",
+              cellClassName: "min-w-[240px] whitespace-normal"
+            },
+            {
+              key: "jenjang_pendidikan",
+              header: "Pendidikan",
+              render: (item) => (
+                <div className="whitespace-normal">
+                  <div className="font-medium text-slate-900">{item.jenjang_pendidikan || "-"}</div>
+                  <div className="text-xs text-slate-500">{item.program_studi || "-"}</div>
+                </div>
+              ),
+              cellClassName: "min-w-[180px]"
+            },
+            {
+              key: "nama_ukpd",
+              header: "Unit Kerja",
+              cellClassName: "min-w-[220px] whitespace-normal"
+            }
           ]}
         />
       </div>

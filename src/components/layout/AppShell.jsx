@@ -6,6 +6,8 @@ import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import MobileSidebar from "@/components/layout/MobileSidebar";
 
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 export default function AppShell({ children }) {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -25,6 +27,45 @@ export default function AppShell({ children }) {
       })
       .finally(() => setLoading(false));
   }, [router]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let timeoutId;
+    let expired = false;
+
+    const logout = async () => {
+      if (expired) return;
+      expired = true;
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } finally {
+        router.replace("/login");
+        router.refresh();
+      }
+    };
+
+    const resetTimer = () => {
+      if (expired) return;
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(logout, IDLE_TIMEOUT_MS);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") resetTimer();
+    };
+
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    events.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    resetTimer();
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [router, user]);
 
   if (loading) {
     return (
