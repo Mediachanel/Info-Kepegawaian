@@ -1,5 +1,12 @@
 # Project Documentation
 
+## Update
+
+Dokumen ini adalah dokumentasi teknis lama. Untuk ringkasan pekerjaan terbaru
+yang sudah dikerjakan pada workstream aplikasi dan import data, lihat:
+
+- [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md)
+
 This document summarizes the current state of the project: database schema,
 API surface, frontend pages, and technology stack.
 
